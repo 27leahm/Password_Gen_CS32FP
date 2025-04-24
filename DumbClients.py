@@ -28,3 +28,6 @@ def start_client(): # set up a socket lol
 
 if __name__ == '__main__':
     start_client()
+
+ 
+print("testing upload")
