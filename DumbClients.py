@@ -418,44 +418,38 @@ class BlackjackClient(tk.Tk):
     def update_canvas(self):
         """Update the game canvas with current game state"""
         self.canvas.delete("all")
-        
+    
         # Draw dealer's cards
         self.canvas.create_text(400, 70, text="Dealer", fill="white", font=("Arial", 16, "bold"))
-        
-        if self.dealer_hand:
-            # Full dealer hand (end of game)
+    
+        if hasattr(self, "dealer_hand") and self.dealer_hand:
             dealer_value = self.calculate_hand_value(self.dealer_hand)
-            self.canvas.create_text(400, 90, text=f"Value: {dealer_value}", 
-                                   fill="white", font=("Arial", 12))
-            
-            # Draw all dealer cards
+            self.canvas.create_text(400, 90, text=f"Value: {dealer_value}", fill="white", font=("Arial", 12))
             start_x = 400 - (len(self.dealer_hand) * CARD_SPACING) // 2
             for i, card in enumerate(self.dealer_hand):
                 self.draw_card(start_x + i * CARD_SPACING, DEALER_Y, card)
-                
-        elif self.dealer_visible:
-            # Only visible dealer cards (during gameplay)
-            start_x = 400 - (2 * CARD_SPACING) // 2  # Assume 2 cards initially
-            
-            # Draw visible card(s)
-            for i, card in enumerate(self.dealer_visible):
-                self.draw_card(start_x + i * CARD_SPACING, DEALER_Y, card)
-            
-            # Draw hidden card
-            self.draw_card(start_x + len(self.dealer_visible) * CARD_SPACING, DEALER_Y, 0, hidden=True)
-        
-        # Draw player's cards
-        self.canvas.create_text(400, 270, text="Player", fill="white", font=("Arial", 16, "bold"))
-        
-        if self.player_hand:
+    
+        # Draw player hands
+        if hasattr(self, "player_hands"):
+            for idx, hand in enumerate(self.player_hands):
+                y_offset = PLAYER_Y + (idx * (CARD_HEIGHT + 30))  # stack hands vertically
+                label = f"Hand {idx+1} (Active)" if idx == self.current_hand_index else f"Hand {idx+1}"
+                hand_value = self.calculate_hand_value(hand)
+                self.canvas.create_text(400, y_offset - 20, text=f"{label} – Value: {hand_value}",
+                                        fill="yellow" if idx == self.current_hand_index else "white",
+                                        font=("Arial", 14, "bold"))
+                start_x = 400 - (len(hand) * CARD_SPACING) // 2
+                for i, card in enumerate(hand):
+                    self.draw_card(start_x + i * CARD_SPACING, y_offset, card)
+        elif self.player_hand:
+            # fallback: single hand mode
             player_value = self.calculate_hand_value(self.player_hand)
-            self.canvas.create_text(400, 290, text=f"Value: {player_value}", 
-                                   fill="white", font=("Arial", 12))
-            
-            # Draw all player cards
+            self.canvas.create_text(400, 270, text=f"Player – Value: {player_value}",
+                                    fill="white", font=("Arial", 12))
             start_x = 400 - (len(self.player_hand) * CARD_SPACING) // 2
             for i, card in enumerate(self.player_hand):
                 self.draw_card(start_x + i * CARD_SPACING, PLAYER_Y, card)
+
 
     def calculate_hand_value(self, hand):
         """Calculate the value of a hand, adjusting for aces"""
