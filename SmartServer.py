@@ -200,51 +200,58 @@ def run_server():
                                         }).encode('utf-8'))
 
                                 elif action == "stand":
-                                    # Dealer's turn
+                                    current_hand_index += 1  # new code
+                                    if current_hand_index < len(split_hands):  # still have more hands to play
+                                        client_socket.sendall(json.dumps({
+                                            "type": "next_hand",
+                                            "current_index": current_hand_index
+                                        }).encode('utf-8'))
+                                        continue  # wait for next hand's action
+                                
+                                    # All hands played — now dealer goes
                                     dealer_value = calculate_hand_value(dealer_hand)
-                                    
-                                    # Dealer draws cards until reaching at least 17
                                     while dealer_value < 17:
                                         dealer_hand.append(deal_card())
                                         dealer_value = calculate_hand_value(dealer_hand)
-                                    
-                                    # Determine winner
-                                    player_value = calculate_hand_value(player_hand)
-                                    
-                                    if dealer_value > 21:
-                                        # Dealer busts, player wins
-                                        result_text = "win"
-                                        message = "Dealer busts! You win!"
-                                        player_money += bet_amount
-                                    elif dealer_value > player_value:
-                                        # Dealer has higher value, dealer wins
-                                        result_text = "lose"
-                                        message = "Dealer wins!"
-                                        player_money -= bet_amount
-                                    elif player_value > dealer_value:
-                                        # Player has higher value, player wins
-                                        result_text = "win"
-                                        message = "You win!"
-                                        player_money += bet_amount
-                                    else:
-                                        # Tie
-                                        result_text = "tie"
-                                        message = "It's a tie!"
-                                    
-                                    # Send final result to client
+                                
+                                    # Evaluate results for each hand
+                                    results = []
+                                    for hand in split_hands:
+                                        player_value = calculate_hand_value(hand)
+                                        if player_value > 21:
+                                            result_text = "bust"
+                                            message = "You busted."
+                                            player_money -= original_bet
+                                        elif dealer_value > 21 or player_value > dealer_value:
+                                            result_text = "win"
+                                            message = "You win!"
+                                            player_money += original_bet
+                                        elif dealer_value > player_value:
+                                            result_text = "lose"
+                                            message = "Dealer wins."
+                                            player_money -= original_bet
+                                        else:
+                                            result_text = "tie"
+                                            message = "Push (tie)."
+                                        results.append({
+                                            "player_hand": hand,
+                                            "player_value": player_value,
+                                            "dealer_hand": dealer_hand,
+                                            "dealer_value": dealer_value,
+                                            "result": result_text,
+                                            "message": message
+                                        })
+                                
+                                    # Send all results back to client
                                     result = {
                                         "type": "result",
-                                        "player_hand": player_hand,
-                                        "player_value": player_value,
-                                        "dealer_hand": dealer_hand,
-                                        "dealer_value": dealer_value,
-                                        "result": result_text,
-                                        "message": message,
+                                        "results": results,
                                         "money": player_money
                                     }
                                     client_socket.sendall(json.dumps(result).encode('utf-8'))
                                     game_over = True
                                 
+                                                                
                                 else:
                                     # Invalid action
                                     error_message = {
