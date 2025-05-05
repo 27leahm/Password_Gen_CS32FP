@@ -82,6 +82,15 @@ class BlackjackClient(tk.Tk):
         self.stand_button = tk.Button(control_frame, text="Stand", command=self.stand, 
                                     font=("Helvetica", 12, "bold"), state=tk.DISABLED)
         self.stand_button.grid(row=0, column=1, padx=10)
+
+        self.double_button = tk.Button(control_frame, text="Double", command=self.double_down,
+                              font=("Helvetica", 12, "bold"), state=tk.DISABLED)  # new code
+        self.double_button.grid(row=0, column=2, padx=10)  # new code
+        
+        self.split_button = tk.Button(control_frame, text="Split", command=self.split_hand,
+                                     font=("Helvetica", 12, "bold"), state=tk.DISABLED)  # new code
+        self.split_button.grid(row=0, column=3, padx=10)  # new code
+
         
         # Bet frame
         bet_frame = tk.Frame(self, bg="darkgreen")
@@ -274,6 +283,11 @@ class BlackjackClient(tk.Tk):
                 
                 # Update UI
                 self.update_canvas()
+                if len(self.player_hand) == 2 and self.money >= self.current_bet:
+                    self.double_button.config(state=tk.NORMAL)  # new code
+                if self.player_hand[0] == self.player_hand[1] and self.money >= 2 * self.current_bet:
+                    self.split_button.config(state=tk.NORMAL)  # new code
+
                 self.update_message(f"Your turn. Hand value: {game_state.get('player_value', 0)}")
                 
                 # Enable game controls
@@ -330,6 +344,24 @@ class BlackjackClient(tk.Tk):
                 self.handle_game_result(result)
             else:
                 self.update_message("Error receiving stand result")
+
+    def double_down(self):  # new code
+        if self.send_data({"action": "double"}):
+            result = self.receive_data()
+            if result["type"] == "result":
+                self.handle_game_result(result)
+    
+    def split_hand(self):  # new code
+        if self.send_data({"action": "split"}):
+            result = self.receive_data()
+            if result["type"] == "split_ack":
+                self.player_hands = result["hands"]
+                self.current_hand_index = result["current_index"]
+                self.update_canvas()
+                self.update_message("Playing first hand after split")
+            else:
+                self.update_message("Split failed or not allowed")
+
 
     def handle_game_result(self, result):
         """Handle the end-game result from the server"""
