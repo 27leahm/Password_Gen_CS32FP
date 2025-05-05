@@ -85,6 +85,11 @@ def run_server():
                             # Deal initial cards
                             player_hand = [deal_card(), deal_card()]
                             dealer_hand = [deal_card(), deal_card()]
+                            split_hands = [player_hand]  # new code
+                            current_hand_index = 0       # new code
+                            is_split = False             # new code
+                            original_bet = bet_amount    # new code
+
                             
                             # Send game state to client
                             game_state = {
@@ -107,6 +112,8 @@ def run_server():
                                 
                                 action_message = json.loads(action_data)
                                 action = action_message.get("action", "")
+
+                                current_hand = split_hands[current_hand_index]  # new code
                                 
                                 # Handle player hit
                                 if action == "hit":
@@ -143,6 +150,55 @@ def run_server():
                                         client_socket.sendall(json.dumps(hit_result).encode('utf-8'))
                                 
                                 # Handle player stand
+                                elif action == "double":  # new code
+                                    if len(current_hand) == 2 and player_money >= bet_amount:
+                                        bet_amount *= 2
+                                        card = deal_card()
+                                        current_hand.append(card)
+                                        value = calculate_hand_value(current_hand)
+                                        while calculate_hand_value(dealer_hand) < 17:
+                                            dealer_hand.append(deal_card())
+                                        dealer_value = calculate_hand_value(dealer_hand)
+                                        if value > 21:
+                                            outcome = "bust"
+                                            player_money -= bet_amount
+                                        elif dealer_value > 21 or value > dealer_value:
+                                            outcome = "win"
+                                            player_money += bet_amount
+                                        elif dealer_value > value:
+                                            outcome = "lose"
+                                            player_money -= bet_amount
+                                        else:
+                                            outcome = "tie"
+                                        result = {
+                                            "type": "result",
+                                            "player_hand": current_hand,
+                                            "player_value": value,
+                                            "dealer_hand": dealer_hand,
+                                            "dealer_value": dealer_value,
+                                            "result": outcome,
+                                            "message": f"Result: {outcome}",
+                                            "money": player_money
+                                        }
+                                        client_socket.sendall(json.dumps(result).encode('utf-8'))
+                                        game_over = True
+                                elif action == "split":  # new code
+                                    if len(current_hand) == 2 and current_hand[0] == current_hand[1] and player_money >= bet_amount:
+                                        hand1 = [current_hand[0], deal_card()]
+                                        hand2 = [current_hand[1], deal_card()]
+                                        split_hands = [hand1, hand2]
+                                        player_money -= bet_amount
+                                        client_socket.sendall(json.dumps({
+                                            "type": "split_ack",
+                                            "hands": split_hands,
+                                            "current_index": 0
+                                        }).encode('utf-8'))
+                                    else:
+                                        client_socket.sendall(json.dumps({
+                                            "type": "error",
+                                            "message": "Cannot split now"
+                                        }).encode('utf-8'))
+
                                 elif action == "stand":
                                     # Dealer's turn
                                     dealer_value = calculate_hand_value(dealer_hand)
