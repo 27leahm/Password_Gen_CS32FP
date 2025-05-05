@@ -327,23 +327,20 @@ class BlackjackClient(tk.Tk):
                 self.update_message("Error receiving hit result")
 
     def stand(self):
-        """Stand with current hand"""
         if not self.game_in_progress:
             return
-        
-        # Send stand action to server
-        stand_data = {
-            "action": "stand"
-        }
-        
-        if self.send_data(stand_data):
-            # Get result from server
+    
+        if self.send_data({"action": "stand"}):
             result = self.receive_data()
-            
-            if result and result.get("type") == "result":
+            if result["type"] == "next_hand":  # new code
+                self.current_hand_index = result["current_index"]  # new code
+                self.update_canvas()  # new code
+                self.update_message(f"Now playing hand {self.current_hand_index + 1}")  # new code
+            elif result["type"] == "result":
                 self.handle_game_result(result)
             else:
                 self.update_message("Error receiving stand result")
+
 
     def double_down(self):  # new code
         if self.send_data({"action": "double"}):
@@ -365,23 +362,24 @@ class BlackjackClient(tk.Tk):
 
     def handle_game_result(self, result):
         """Handle the end-game result from the server"""
-        # Update game state
-        self.player_hand = result.get("player_hand", [])
-        self.dealer_hand = result.get("dealer_hand", [])
-        self.dealer_visible = []  # Clear visible cards, we now show the full hand
-        self.money = result.get("money", self.money)
+        self.disable_game_controls()
+        self.bet_button.config(state=tk.NORMAL)
         self.game_in_progress = False
-        
-        # Update UI
+    
+        if "results" in result:  # from split
+            self.player_hands = [r["player_hand"] for r in result["results"]]
+            self.dealer_hand = result["results"][0]["dealer_hand"]
+            messages = [f"Hand {i+1}: {r['message']}" for i, r in enumerate(result["results"])]
+            self.update_message(" | ".join(messages))
+        else:
+            self.player_hand = result.get("player_hand", [])
+            self.dealer_hand = result.get("dealer_hand", [])
+            self.update_message(result.get("message", "Game over"))
+    
+        self.money = result.get("money", self.money)
         self.update_money_display()
         self.update_canvas()
-        self.update_message(result.get("message", "Game over"))
-        
-        # Disable game controls, enable betting
-        self.disable_game_controls()
-        self.enable_betting()
-        
-        # Check if game is over (out of money)
+    
         if self.money <= 0:
             messagebox.showinfo("Game Over", "You're out of money! Game over.")
             self.quit()
