@@ -8,7 +8,7 @@ HOST = '127.0.0.1'  # Standard loopback IP address
 PORT = 65432        # Port to listen on
 
 # Game variables
-STARTING_MONEY = 1000
+STARTING_MONEY = 2000
 
 def deal_card():
     """Returns a random card value between 2-11"""
@@ -28,7 +28,7 @@ def calculate_hand_value(hand):
 
 def run_server():
     """Main server function"""
-    print("Starting Blackjack server...")
+    print("Starting Two-Player Blackjack server...")
     
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         # Allow socket reuse to avoid "address already in use" errors
@@ -46,18 +46,22 @@ def run_server():
             
             with client_socket:
                 # Initialize player money
-                player_money = STARTING_MONEY
+                player1_money = STARTING_MONEY
+                player2_money = STARTING_MONEY
+                
+                # Keep track of dealer's hand for the round
+                dealer_hand = []
                 
                 # Send initial message to client
                 welcome_message = {
                     "type": "welcome",
-                    "money": player_money,
-                    "message": "Welcome to Blackjack! You have $1000."
+                    "money": STARTING_MONEY,
+                    "message": "Welcome to Two-Player Blackjack! Each player has $1000."
                 }
                 client_socket.sendall(json.dumps(welcome_message).encode('utf-8'))
                 
                 # Main game loop
-                while player_money > 0:
+                while player1_money > 0 and player2_money > 0:
                     try:
                         # Wait for bet from client
                         data = client_socket.recv(1024).decode('utf-8')
@@ -71,10 +75,14 @@ def run_server():
                         
                         # Handle client bet
                         if message_type == "bet":
+                            player_num = client_message.get("player", 1)  # Default to player 1
                             bet_amount = client_message.get("amount", 0)
                             
+                            # Get current player's money
+                            current_player_money = player1_money if player_num == 1 else player2_money
+                            
                             # Validate bet
-                            if bet_amount <= 0 or bet_amount > player_money:
+                            if bet_amount <= 0 or bet_amount > current_player_money:
                                 error_message = {
                                     "type": "error",
                                     "message": "Invalid bet amount"
@@ -84,7 +92,10 @@ def run_server():
                             
                             # Deal initial cards
                             player_hand = [deal_card(), deal_card()]
-                            dealer_hand = [deal_card(), deal_card()]
+                            
+                            # Only deal dealer cards on first player's turn
+                            if player_num == 1:
+                                dealer_hand = [deal_card(), deal_card()]
                             
                             # Send game state to client
                             game_state = {
@@ -107,6 +118,7 @@ def run_server():
                                 
                                 action_message = json.loads(action_data)
                                 action = action_message.get("action", "")
+                                current_player = action_message.get("player", player_num)
                                 
                                 # Handle player hit
                                 if action == "hit":
@@ -118,17 +130,18 @@ def run_server():
                                     # Check if player busts
                                     if player_value > 21:
                                         # Player busts, dealer wins
-                                        player_money -= bet_amount
+                                        if current_player == 1:
+                                            player1_money -= bet_amount
+                                        else:
+                                            player2_money -= bet_amount
                                         
                                         result = {
                                             "type": "result",
                                             "player_hand": player_hand,
                                             "player_value": player_value,
-                                            "dealer_hand": dealer_hand,
-                                            "dealer_value": calculate_hand_value(dealer_hand),
+                                            "money": player1_money if current_player == 1 else player2_money,
                                             "result": "bust",
-                                            "message": "Bust! You lose.",
-                                            "money": player_money
+                                            "message": "Bust! You lose."
                                         }
                                         client_socket.sendall(json.dumps(result).encode('utf-8'))
                                         game_over = True
@@ -144,50 +157,97 @@ def run_server():
                                 
                                 # Handle player stand
                                 elif action == "stand":
-                                    # Dealer's turn
-                                    dealer_value = calculate_hand_value(dealer_hand)
+                                    if current_player == 1:
+                                        # Player 1 stands, notify to switch to Player 2
+                                        player1_final_hand = player_hand  # Store Player 1's final hand
+                                        player1_final_value = calculate_hand_value(player_hand)
+                                        
+                                        # Notify client to switch to Player 2
+                                        player1_done = {
+                                            "type": "player1_done",
+                                            "player1_hand": player1_final_hand,
+                                            "player1_value": player1_final_value
+                                        }
+                                        client_socket.sendall(json.dumps(player1_done).encode('utf-8'))
+                                        game_over = True  # End player 1's turn
                                     
-                                    # Dealer draws cards until reaching at least 17
-                                    while dealer_value < 17:
-                                        dealer_hand.append(deal_card())
+                                    else:  # Player 2 stands
+                                        player2_final_hand = player_hand  # Store Player 2's final hand
+                                        player2_final_value = calculate_hand_value(player_hand)
+                                        
+                                        # Now dealer plays
                                         dealer_value = calculate_hand_value(dealer_hand)
-                                    
-                                    # Determine winner
-                                    player_value = calculate_hand_value(player_hand)
-                                    
-                                    if dealer_value > 21:
-                                        # Dealer busts, player wins
-                                        result_text = "win"
-                                        message = "Dealer busts! You win!"
-                                        player_money += bet_amount
-                                    elif dealer_value > player_value:
-                                        # Dealer has higher value, dealer wins
-                                        result_text = "lose"
-                                        message = "Dealer wins!"
-                                        player_money -= bet_amount
-                                    elif player_value > dealer_value:
-                                        # Player has higher value, player wins
-                                        result_text = "win"
-                                        message = "You win!"
-                                        player_money += bet_amount
-                                    else:
-                                        # Tie
-                                        result_text = "tie"
-                                        message = "It's a tie!"
-                                    
-                                    # Send final result to client
-                                    result = {
-                                        "type": "result",
-                                        "player_hand": player_hand,
-                                        "player_value": player_value,
-                                        "dealer_hand": dealer_hand,
-                                        "dealer_value": dealer_value,
-                                        "result": result_text,
-                                        "message": message,
-                                        "money": player_money
-                                    }
-                                    client_socket.sendall(json.dumps(result).encode('utf-8'))
-                                    game_over = True
+                                        
+                                        # Dealer draws cards until reaching at least 17
+                                        while dealer_value < 17:
+                                            dealer_hand.append(deal_card())
+                                            dealer_value = calculate_hand_value(dealer_hand)
+                                        
+                                        # Determine results for both players
+                                        player1_result = ""
+                                        player2_result = ""
+                                        player1_message = ""
+                                        player2_message = ""
+                                        
+                                        # Player 1 result
+                                        if player1_final_value > 21:
+                                            player1_result = "bust"
+                                            player1_message = "Player 1 busted"
+                                            # Money already deducted
+                                        elif dealer_value > 21:
+                                            player1_result = "win"
+                                            player1_message = "Player 1 wins! Dealer busted"
+                                            player1_money += bet_amount
+                                        elif dealer_value > player1_final_value:
+                                            player1_result = "lose"
+                                            player1_message = "Player 1 loses"
+                                            player1_money -= bet_amount
+                                        elif player1_final_value > dealer_value:
+                                            player1_result = "win"
+                                            player1_message = "Player 1 wins!"
+                                            player1_money += bet_amount
+                                        else:
+                                            player1_result = "tie"
+                                            player1_message = "Player 1 ties"
+                                        
+                                        # Player 2 result
+                                        if player2_final_value > 21:
+                                            player2_result = "bust"
+                                            player2_message = "Player 2 busted"
+                                            # Money already deducted
+                                        elif dealer_value > 21:
+                                            player2_result = "win"
+                                            player2_message = "Player 2 wins! Dealer busted"
+                                            player2_money += bet_amount
+                                        elif dealer_value > player2_final_value:
+                                            player2_result = "lose"
+                                            player2_message = "Player 2 loses"
+                                            player2_money -= bet_amount
+                                        elif player2_final_value > dealer_value:
+                                            player2_result = "win"
+                                            player2_message = "Player 2 wins!"
+                                            player2_money += bet_amount
+                                        else:
+                                            player2_result = "tie"
+                                            player2_message = "Player 2 ties"
+                                        
+                                        # Send final result to client
+                                        final_result = {
+                                            "type": "result",
+                                            "player1_hand": player1_final_hand,
+                                            "player1_value": player1_final_value,
+                                            "player2_hand": player2_final_hand,
+                                            "player2_value": player2_final_value,
+                                            "dealer_hand": dealer_hand,
+                                            "dealer_value": dealer_value,
+                                            "player1_result": player1_result,
+                                            "player2_result": player2_result,
+                                            "player1_money": player1_money,
+                                            "player2_money": player2_money,
+                                            "message": f"Dealer: {dealer_value}, {player1_message}, {player2_message}"
+                                        }
+                                        client_socket.sendall(json.dumps(final_result).encode('utf-8'))
+                                        game_over = True
                                 
                                 else:
                                     # Invalid action
@@ -216,11 +276,11 @@ def run_server():
                         except:
                             pass
                 
-                # Game over - player out of money
-                if player_money <= 0:
+                # Game over - a player is out of money
+                if player1_money <= 0 or player2_money <= 0:
                     game_over_message = {
                         "type": "game_over",
-                        "message": "You're out of money! Game over."
+                        "message": "Game over! One player is out of money."
                     }
                     client_socket.sendall(json.dumps(game_over_message).encode('utf-8'))
         
